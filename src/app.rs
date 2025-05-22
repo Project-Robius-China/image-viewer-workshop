@@ -63,9 +63,10 @@ live_design! {
         }
     }
 
-    ImageItem = <View> {
+    ImageItem = {{ImageItem}} {
         width: 256,
         height: 256,
+        image_index: 0,
 
         image = <Image> {
             width: Fill,
@@ -122,7 +123,6 @@ live_design! {
     ImageGrid = {{ImageGrid}} {
         <PortalList> {
             flow: Down,
-
             ImageRow = <ImageRow> {}
         }
     }
@@ -250,6 +250,18 @@ pub struct App {
     state: State,
 }
 
+#[derive(Clone, Debug, Eq, Hash, Copy, PartialEq)]
+pub enum ImageClickedAction{
+    None,
+    Clicked(usize),
+}
+
+impl Default for ImageClickedAction {
+    fn default() -> Self {
+        ImageClickedAction::None
+    }
+}
+
 #[derive(Live, LiveHook, Widget)]
 pub struct ImageRow {
     #[deref]
@@ -274,16 +286,20 @@ impl Widget for ImageRow {
                         continue;
                     }
 
-                    let item = list.item(cx, item_idx, live_id!(ImageItem));
-                    let image_idx =
-                        state.first_image_idx_for_row(row_idx) + item_idx;
-                    let filtered_image_idx =
-                        state.filtered_image_idxs[image_idx];
+                    let item_widget_id = live_id!(ImageItem);
+                    let item = list.item(cx, item_idx, item_widget_id);
+
+                    let absolute_image_idx = state.first_image_idx_for_row(row_idx) + item_idx;
+
+                    // Set the image_index for the ImageItem instance
+                    item.apply_over(cx, live!{ image_index: (absolute_image_idx) });
+
+                    let filtered_image_idx = state.filtered_image_idxs[absolute_image_idx];
+
                     let image_path = &state.image_paths[filtered_image_idx];
-                    let image = item.image(id!(image));
-                    image
-                        .load_image_file_by_path_async(cx, &image_path)
-                        .unwrap();
+                    let image_view = item.image(id!(image));
+                    image_view.load_image_file_by_path_async(cx, &image_path).unwrap();
+
                     item.draw_all(cx, &mut Scope::empty());
                 }
             }
@@ -293,6 +309,43 @@ impl Widget for ImageRow {
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope)
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct ImageItem {
+    #[deref]
+    view: View,
+
+    #[live] // image_index will be set by the parent ImageRow
+    image_index: usize,
+}
+
+impl Widget for ImageItem {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        // let uid = self.widget_uid();
+        match event.hits(cx, self.view.area()) {
+            Hit::FingerUp(_pd) => {
+                Cx::post_action(ImageClickedAction::Clicked(self.image_index));
+                // 两种方式
+                // cx.widget_action(
+                //     uid,
+                //     &scope.path, // 使用从父级传来的 scope 的 path
+                //     ImageClickedAction::Clicked(self.image_index)
+                // );
+            }
+            _ => {}
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // The actual image loading and display is handled by ImageRow calling:
+        //   let image_view = item.image(id!(image));
+        //   image_view.load_image_file_by_path_async(cx, &image_path).unwrap();
+        // So, ImageItem just needs to ensure its view is drawn.
+        // The `image_index` property is primarily for event handling.
+        self.view.draw_walk(cx, scope, walk)
     }
 }
 
@@ -379,10 +432,8 @@ impl App {
     pub fn navigate_left(&mut self, cx: &mut Cx) {
         if let Some(image_idx) = self.state.current_image_idx {
             if image_idx > 0 {
-                // 还有上一张图片，正常导航
                 self.set_current_image(cx, Some(image_idx - 1));
             } else {
-                // 已经是第一张图片，显示边界提示弹窗
                 self.show_alert(cx, "已经是第一张图片了");
             }
         }
@@ -460,6 +511,37 @@ impl AppMain for App {
 
 impl MatchEvent for App {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+
+        for action_in_event in actions {
+            if let ImageClickedAction::Clicked(image_idx) = action_in_event.cast(){
+                self.set_current_image(cx, Some(image_idx));
+                self.ui.page_flip(id!(page_flip)).set_active_page(cx, live_id!(slideshow));
+                self.ui.view(id!(slideshow.overlay)).set_key_focus(cx);
+            } else {
+                log!("App::handle_actions - Action was not a WidgetAction: {:?}", action_in_event);
+            }
+        }
+
+        // 两种方式
+        // for action_in_event in actions {
+        //     // log!("App::handle_actions - processing action: {:?}", action_in_event); // 可以保留这个日志用于调试
+        //     if let Some(widget_action) = action_in_event.as_widget_action() {
+        //         match widget_action.cast::<ImageClickedAction>() {
+        //             ImageClickedAction::Clicked(image_idx) => {
+        //                 log!("App::handle_actions - Matched ImageClickedAction::Clicked({}) from UID {}", image_idx, widget_action.widget_uid.0);
+        //                 self.set_current_image(cx, Some(image_idx));
+        //                 self.ui.page_flip(id!(page_flip)).set_active_page(cx, live_id!(slideshow));
+        //                 self.ui.view(id!(slideshow.overlay)).set_key_focus(cx);
+        //             }
+        //             ImageClickedAction::None => {
+        //                 log!("App::handle_actions - WidgetAction (UID {}) was not ImageClickedAction", widget_action.widget_uid.0);
+        //             }
+        //         }
+        //     } else {
+        //         // log!("App::handle_actions - Action was not a WidgetAction: {:?}", action_in_event);
+        //     }
+        // }
+
         if self.ui.button(id!(slideshow_button)).clicked(&actions) {
             self.ui
                 .page_flip(id!(page_flip))
