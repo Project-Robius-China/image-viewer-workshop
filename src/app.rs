@@ -66,6 +66,7 @@ live_design! {
     ImageItem = {{ImageItem}} {
         width: 256,
         height: 256,
+        cursor: Hand,
         image_index: 0,
 
         image = <Image> {
@@ -518,7 +519,7 @@ impl MatchEvent for App {
                 self.ui.page_flip(id!(page_flip)).set_active_page(cx, live_id!(slideshow));
                 self.ui.view(id!(slideshow.overlay)).set_key_focus(cx);
             } else {
-                log!("App::handle_actions - Action was not a WidgetAction: {:?}", action_in_event);
+                // log!("App::handle_actions - Action was not a WidgetAction: {:?}", action_in_event);
             }
         }
 
