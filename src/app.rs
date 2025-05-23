@@ -1,8 +1,11 @@
 use makepad_widgets::*;
 use std::path::{Path, PathBuf};
+use crate::components::ImageClickedAction;
 
 live_design! {
     use link::widgets::*;
+    use link::theme::*;
+    use crate::components::image_grid::ImageGrid;
 
     PLACEHOLDER = dep("crate://self/resources/Rust.jpg");
     LEFT_ARROW = dep("crate://self/resources/left_arrow.svg");
@@ -15,9 +18,23 @@ live_design! {
         height: Fill
 
         bg_view: <View> {
+            width: Fill
+            height: Fill
+            show_bg: true
             draw_bg: {
+                // Alpha 值的范围是 0.0 (完全透明) 到 1.0 (完全不透明)。
+                // 十六进制的 cc 转换为十进制是 204。
+                // Alpha 的计算方式是 十进制值 / 255。
+                // 所以 204 / 255 ≈ 0.8。
+                // 如果你想让它更透明，你需要一个更小的 alpha 值。
+                // 例如，如果你想要大约 50% 的透明度：
+                // 255 * 0.5 = 127.5。最接近的十六进制值是 80 (十进制 128)。
+                // 所以颜色会是 #00000080。
+                // 如果你想要大约 30% 的透明度：
+                // 255 * 0.3 ≈ 76.5。最接近的十六进制值是 4D (十进制 77) 或 4C (十进制 76)。
+                // 所以颜色会是 #0000004D 或 #0000004C。
                 fn pixel(self) -> vec4 {
-                    return #000000cc;
+                    return #00000080;
                 }
             }
         }
@@ -48,6 +65,7 @@ live_design! {
                 }
                 padding: 20
 
+
                 message = <Label> {
                     width: Fill
                     height: Fit
@@ -63,27 +81,7 @@ live_design! {
         }
     }
 
-    ImageItem = <View> {
-        width: 256,
-        height: 256,
 
-        image = <Image> {
-            width: Fill,
-            height: Fill,
-            fit: Biggest,
-            source: (PLACEHOLDER)
-        }
-    }
-
-
-    ImageRow = {{ImageRow}} {
-        <PortalList> {
-            height: 256,
-            flow: Right,
-
-            ImageItem = <ImageItem> {}
-        }
-	}
 
     SearchBox = <View> {
         width: 150,
@@ -116,14 +114,6 @@ live_design! {
         <Filler> {}
         slideshow_button = <Button> {
             text: "Slideshow"
-        }
-    }
-
-    ImageGrid = {{ImageGrid}} {
-        <PortalList> {
-            flow: Down,
-
-            ImageRow = <ImageRow> {}
         }
     }
 
@@ -198,8 +188,8 @@ live_design! {
 
 #[derive(Debug)]
 pub struct State {
-    image_paths: Vec<PathBuf>,
-    filtered_image_idxs: Vec<usize>,
+    pub(crate) image_paths: Vec<PathBuf>,
+    pub(crate) filtered_image_idxs: Vec<usize>,
     max_images_per_row: usize,
     current_image_idx: Option<usize>,
     show_alert: bool,
@@ -220,19 +210,19 @@ impl Default for State {
 }
 
 impl State {
-    fn num_images(&self) -> usize {
+    pub(crate) fn num_images(&self) -> usize {
         self.filtered_image_idxs.len()
     }
 
-    fn num_rows(&self) -> usize {
+    pub(crate) fn num_rows(&self) -> usize {
         self.num_images().div_ceil(self.max_images_per_row)
     }
 
-    fn first_image_idx_for_row(&self, row_idx: usize) -> usize {
+    pub(crate) fn first_image_idx_for_row(&self, row_idx: usize) -> usize {
         row_idx * self.max_images_per_row
     }
 
-    fn num_images_for_row(&self, row_idx: usize) -> usize {
+    pub(crate) fn num_images_for_row(&self, row_idx: usize) -> usize {
         let first_image_idx = self.first_image_idx_for_row(row_idx);
         let num_remaining_images = self.num_images() - first_image_idx;
         self.max_images_per_row.min(num_remaining_images)
@@ -250,92 +240,11 @@ pub struct App {
     state: State,
 }
 
-#[derive(Live, LiveHook, Widget)]
-pub struct ImageRow {
-    #[deref]
-    view: View,
-}
-
-impl Widget for ImageRow {
-    fn draw_walk(
-        &mut self,
-        cx: &mut Cx2d,
-        scope: &mut Scope,
-        walk: Walk,
-    ) -> DrawStep {
-        while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
-            if let Some(mut list) = item.as_portal_list().borrow_mut() {
-                let state = scope.data.get_mut::<State>().unwrap();
-                let row_idx = *scope.props.get::<usize>().unwrap();
-
-                list.set_item_range(cx, 0, state.num_images_for_row(row_idx));
-                while let Some(item_idx) = list.next_visible_item(cx) {
-                    if item_idx >= state.num_images_for_row(row_idx) {
-                        continue;
-                    }
-
-                    let item = list.item(cx, item_idx, live_id!(ImageItem));
-                    let image_idx =
-                        state.first_image_idx_for_row(row_idx) + item_idx;
-                    let filtered_image_idx =
-                        state.filtered_image_idxs[image_idx];
-                    let image_path = &state.image_paths[filtered_image_idx];
-                    let image = item.image(id!(image));
-                    image
-                        .load_image_file_by_path_async(cx, &image_path)
-                        .unwrap();
-                    item.draw_all(cx, &mut Scope::empty());
-                }
-            }
-        }
-        DrawStep::done()
-    }
-
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope)
-    }
-}
-
-#[derive(Live, LiveHook, Widget)]
-pub struct ImageGrid {
-    #[deref]
-    view: View,
-}
-
-impl Widget for ImageGrid {
-    fn draw_walk(
-        &mut self,
-        cx: &mut Cx2d,
-        scope: &mut Scope,
-        walk: Walk,
-    ) -> DrawStep {
-        while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
-            if let Some(mut list) = item.as_portal_list().borrow_mut() {
-                let state = scope.data.get_mut::<State>().unwrap();
-
-                list.set_item_range(cx, 0, state.num_rows());
-                while let Some(row_idx) = list.next_visible_item(cx) {
-                    if row_idx >= state.num_rows() {
-                        continue;
-                    }
-
-                    let row = list.item(cx, row_idx, live_id!(ImageRow));
-                    let mut scope = Scope::with_data_props(state, &row_idx);
-                    row.draw_all(cx, &mut scope);
-                }
-            }
-        }
-        DrawStep::done()
-    }
-
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope)
-    }
-}
 
 impl LiveRegister for App {
     fn live_register(cx: &mut Cx) {
         makepad_widgets::live_design(cx);
+        crate::components::live_design(cx); // Step 20
     }
 }
 
@@ -379,10 +288,8 @@ impl App {
     pub fn navigate_left(&mut self, cx: &mut Cx) {
         if let Some(image_idx) = self.state.current_image_idx {
             if image_idx > 0 {
-                // 还有上一张图片，正常导航
                 self.set_current_image(cx, Some(image_idx - 1));
             } else {
-                // 已经是第一张图片，显示边界提示弹窗
                 self.show_alert(cx, "已经是第一张图片了");
             }
         }
@@ -460,6 +367,37 @@ impl AppMain for App {
 
 impl MatchEvent for App {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+
+        for action in actions {
+            if let ImageClickedAction::Clicked(image_idx) = action.cast(){
+                self.set_current_image(cx, Some(image_idx));
+                self.ui.page_flip(id!(page_flip)).set_active_page(cx, live_id!(slideshow));
+                self.ui.view(id!(slideshow.overlay)).set_key_focus(cx);
+            } else {
+                // log!("App::handle_actions - Action was not a WidgetAction: {:?}", action_in_event);
+            }
+        }
+
+        // 两种方式
+        // for action_in_event in actions {
+        //     // log!("App::handle_actions - processing action: {:?}", action_in_event); // 可以保留这个日志用于调试
+        //     if let Some(widget_action) = action_in_event.as_widget_action() {
+        //         match widget_action.cast::<ImageClickedAction>() {
+        //             ImageClickedAction::Clicked(image_idx) => {
+        //                 log!("App::handle_actions - Matched ImageClickedAction::Clicked({}) from UID {}", image_idx, widget_action.widget_uid.0);
+        //                 self.set_current_image(cx, Some(image_idx));
+        //                 self.ui.page_flip(id!(page_flip)).set_active_page(cx, live_id!(slideshow));
+        //                 self.ui.view(id!(slideshow.overlay)).set_key_focus(cx);
+        //             }
+        //             ImageClickedAction::None => {
+        //                 log!("App::handle_actions - WidgetAction (UID {}) was not ImageClickedAction", widget_action.widget_uid.0);
+        //             }
+        //         }
+        //     } else {
+        //         // log!("App::handle_actions - Action was not a WidgetAction: {:?}", action_in_event);
+        //     }
+        // }
+
         if self.ui.button(id!(slideshow_button)).clicked(&actions) {
             self.ui
                 .page_flip(id!(page_flip))
