@@ -1,8 +1,11 @@
 use makepad_widgets::*;
 use std::path::{Path, PathBuf};
+use crate::components::ImageClickedAction;
 
 live_design! {
     use link::widgets::*;
+    use link::theme::*;
+    use crate::components::image_grid::ImageGrid;
 
     PLACEHOLDER = dep("crate://self/resources/Rust.jpg");
     LEFT_ARROW = dep("crate://self/resources/left_arrow.svg");
@@ -62,6 +65,7 @@ live_design! {
                 }
                 padding: 20
 
+
                 message = <Label> {
                     width: Fill
                     height: Fit
@@ -77,28 +81,7 @@ live_design! {
         }
     }
 
-    ImageItem = {{ImageItem}} {
-        width: 256,
-        height: 256,
-        image_index: 0,
 
-        image = <Image> {
-            width: Fill,
-            height: Fill,
-            fit: Biggest,
-            source: (PLACEHOLDER)
-        }
-    }
-
-
-    ImageRow = {{ImageRow}} {
-        <PortalList> {
-            height: 256,
-            flow: Right,
-
-            ImageItem = <ImageItem> {}
-        }
-	}
 
     SearchBox = <View> {
         width: 150,
@@ -131,13 +114,6 @@ live_design! {
         <Filler> {}
         slideshow_button = <Button> {
             text: "Slideshow"
-        }
-    }
-
-    ImageGrid = {{ImageGrid}} {
-        <PortalList> {
-            flow: Down,
-            ImageRow = <ImageRow> {}
         }
     }
 
@@ -212,8 +188,8 @@ live_design! {
 
 #[derive(Debug)]
 pub struct State {
-    image_paths: Vec<PathBuf>,
-    filtered_image_idxs: Vec<usize>,
+    pub(crate) image_paths: Vec<PathBuf>,
+    pub(crate) filtered_image_idxs: Vec<usize>,
     max_images_per_row: usize,
     current_image_idx: Option<usize>,
     show_alert: bool,
@@ -234,19 +210,19 @@ impl Default for State {
 }
 
 impl State {
-    fn num_images(&self) -> usize {
+    pub(crate) fn num_images(&self) -> usize {
         self.filtered_image_idxs.len()
     }
 
-    fn num_rows(&self) -> usize {
+    pub(crate) fn num_rows(&self) -> usize {
         self.num_images().div_ceil(self.max_images_per_row)
     }
 
-    fn first_image_idx_for_row(&self, row_idx: usize) -> usize {
+    pub(crate) fn first_image_idx_for_row(&self, row_idx: usize) -> usize {
         row_idx * self.max_images_per_row
     }
 
-    fn num_images_for_row(&self, row_idx: usize) -> usize {
+    pub(crate) fn num_images_for_row(&self, row_idx: usize) -> usize {
         let first_image_idx = self.first_image_idx_for_row(row_idx);
         let num_remaining_images = self.num_images() - first_image_idx;
         self.max_images_per_row.min(num_remaining_images)
@@ -264,145 +240,11 @@ pub struct App {
     state: State,
 }
 
-#[derive(Clone, Debug, Eq, Hash, Copy, PartialEq)]
-pub enum ImageClickedAction{
-    None,
-    Clicked(usize),
-}
-
-impl Default for ImageClickedAction {
-    fn default() -> Self {
-        ImageClickedAction::None
-    }
-}
-
-#[derive(Live, LiveHook, Widget)]
-pub struct ImageRow {
-    #[deref]
-    view: View,
-}
-
-impl Widget for ImageRow {
-    fn draw_walk(
-        &mut self,
-        cx: &mut Cx2d,
-        scope: &mut Scope,
-        walk: Walk,
-    ) -> DrawStep {
-        while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
-            if let Some(mut list) = item.as_portal_list().borrow_mut() {
-                let state = scope.data.get_mut::<State>().unwrap();
-                let row_idx = *scope.props.get::<usize>().unwrap();
-
-                list.set_item_range(cx, 0, state.num_images_for_row(row_idx));
-                while let Some(item_idx) = list.next_visible_item(cx) {
-                    if item_idx >= state.num_images_for_row(row_idx) {
-                        continue;
-                    }
-
-                    let item_widget_id = live_id!(ImageItem);
-                    let item = list.item(cx, item_idx, item_widget_id);
-
-                    let absolute_image_idx = state.first_image_idx_for_row(row_idx) + item_idx;
-
-                    // Set the image_index for the ImageItem instance
-                    item.apply_over(cx, live!{ image_index: (absolute_image_idx) });
-
-                    let filtered_image_idx = state.filtered_image_idxs[absolute_image_idx];
-
-                    let image_path = &state.image_paths[filtered_image_idx];
-                    let image_view = item.image(id!(image));
-                    image_view.load_image_file_by_path_async(cx, &image_path).unwrap();
-
-                    item.draw_all(cx, &mut Scope::empty());
-                }
-            }
-        }
-        DrawStep::done()
-    }
-
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope)
-    }
-}
-
-#[derive(Live, LiveHook, Widget)]
-pub struct ImageItem {
-    #[deref]
-    view: View,
-
-    #[live] // image_index will be set by the parent ImageRow
-    image_index: usize,
-}
-
-impl Widget for ImageItem {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
-        // let uid = self.widget_uid();
-        match event.hits(cx, self.view.area()) {
-            Hit::FingerUp(_pd) => {
-                Cx::post_action(ImageClickedAction::Clicked(self.image_index));
-                // 两种方式
-                // cx.widget_action(
-                //     uid,
-                //     &scope.path, // 使用从父级传来的 scope 的 path
-                //     ImageClickedAction::Clicked(self.image_index)
-                // );
-            }
-            _ => {}
-        }
-    }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // The actual image loading and display is handled by ImageRow calling:
-        //   let image_view = item.image(id!(image));
-        //   image_view.load_image_file_by_path_async(cx, &image_path).unwrap();
-        // So, ImageItem just needs to ensure its view is drawn.
-        // The `image_index` property is primarily for event handling.
-        self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-#[derive(Live, LiveHook, Widget)]
-pub struct ImageGrid {
-    #[deref]
-    view: View,
-}
-
-impl Widget for ImageGrid {
-    fn draw_walk(
-        &mut self,
-        cx: &mut Cx2d,
-        scope: &mut Scope,
-        walk: Walk,
-    ) -> DrawStep {
-        while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
-            if let Some(mut list) = item.as_portal_list().borrow_mut() {
-                let state = scope.data.get_mut::<State>().unwrap();
-
-                list.set_item_range(cx, 0, state.num_rows());
-                while let Some(row_idx) = list.next_visible_item(cx) {
-                    if row_idx >= state.num_rows() {
-                        continue;
-                    }
-
-                    let row = list.item(cx, row_idx, live_id!(ImageRow));
-                    let mut scope = Scope::with_data_props(state, &row_idx);
-                    row.draw_all(cx, &mut scope);
-                }
-            }
-        }
-        DrawStep::done()
-    }
-
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope)
-    }
-}
 
 impl LiveRegister for App {
     fn live_register(cx: &mut Cx) {
         makepad_widgets::live_design(cx);
+        crate::components::live_design(cx); // Step 20
     }
 }
 
@@ -526,8 +368,8 @@ impl AppMain for App {
 impl MatchEvent for App {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
 
-        for action_in_event in actions {
-            if let ImageClickedAction::Clicked(image_idx) = action_in_event.cast(){
+        for action in actions {
+            if let ImageClickedAction::Clicked(image_idx) = action.cast(){
                 self.set_current_image(cx, Some(image_idx));
                 self.ui.page_flip(id!(page_flip)).set_active_page(cx, live_id!(slideshow));
                 self.ui.view(id!(slideshow.overlay)).set_key_focus(cx);
