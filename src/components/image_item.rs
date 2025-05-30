@@ -20,16 +20,10 @@ live_design! {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, Copy, PartialEq)]
+#[derive(Clone, Debug, DefaultNone)]
 pub enum ImageClickedAction{
     None,
     Clicked(usize),
-}
-
-impl Default for ImageClickedAction {
-    fn default() -> Self {
-        ImageClickedAction::None
-    }
 }
 
 #[derive(Live, LiveHook, Widget)]
@@ -45,8 +39,8 @@ impl Widget for ImageItem {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         match event.hits(cx, self.view.area()) {
-            Hit::FingerUp(_pd) => {
-                Cx::post_action(ImageClickedAction::Clicked(self.image_index));
+            Hit::FingerUp(_) => {
+                cx.action(ImageClickedAction::Clicked(self.image_index));
             }
             _ => {}
         }

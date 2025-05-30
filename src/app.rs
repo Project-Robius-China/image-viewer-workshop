@@ -15,7 +15,7 @@ live_design! {
     // Step 18: 增加模态弹窗
     AlertDialog = <Modal> {
         width: Fill
-        height: Fill
+        height: Fill,
 
         bg_view: <View> {
             width: Fill
@@ -42,16 +42,13 @@ live_design! {
         content: <View> {
             width: Fit
             height: Fit
+            padding: 20
+            flow: Down
             align: {x: 0.5, y: 0.5}  // 直接在 content 层居中
 
             draw_bg: {
                 color: #333
             }
-
-            width: 300
-            height: 150
-            padding: 20
-            flow: Down
 
             dialog = <RoundedView> {
                 width: 300
@@ -373,30 +370,8 @@ impl MatchEvent for App {
                 self.set_current_image(cx, Some(image_idx));
                 self.ui.page_flip(id!(page_flip)).set_active_page(cx, live_id!(slideshow));
                 self.ui.view(id!(slideshow.overlay)).set_key_focus(cx);
-            } else {
-                // log!("App::handle_actions - Action was not a WidgetAction: {:?}", action_in_event);
             }
         }
-
-        // 两种方式
-        // for action_in_event in actions {
-        //     // log!("App::handle_actions - processing action: {:?}", action_in_event); // 可以保留这个日志用于调试
-        //     if let Some(widget_action) = action_in_event.as_widget_action() {
-        //         match widget_action.cast::<ImageClickedAction>() {
-        //             ImageClickedAction::Clicked(image_idx) => {
-        //                 log!("App::handle_actions - Matched ImageClickedAction::Clicked({}) from UID {}", image_idx, widget_action.widget_uid.0);
-        //                 self.set_current_image(cx, Some(image_idx));
-        //                 self.ui.page_flip(id!(page_flip)).set_active_page(cx, live_id!(slideshow));
-        //                 self.ui.view(id!(slideshow.overlay)).set_key_focus(cx);
-        //             }
-        //             ImageClickedAction::None => {
-        //                 log!("App::handle_actions - WidgetAction (UID {}) was not ImageClickedAction", widget_action.widget_uid.0);
-        //             }
-        //         }
-        //     } else {
-        //         // log!("App::handle_actions - Action was not a WidgetAction: {:?}", action_in_event);
-        //     }
-        // }
 
         if self.ui.button(id!(slideshow_button)).clicked(&actions) {
             self.ui
